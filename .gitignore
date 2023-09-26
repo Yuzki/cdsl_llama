@@ -1,0 +1,6 @@
+.venv
+data
+llama-2*
+results
+wandb
+app.py
