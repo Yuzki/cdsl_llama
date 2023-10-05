@@ -1,6 +1,8 @@
 .venv
 data
+data.bak
 llama-2*
 results
 wandb
 app.py
+chat.py
