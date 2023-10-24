@@ -19,8 +19,7 @@ data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 
 def create_dataset():
-    '''create dataset and save json
-    '''
+    """create dataset and save json"""
 
     json_files = [
         f
@@ -28,17 +27,62 @@ def create_dataset():
         if f.endswith(".json") and not f == "cdsl-dataset.json"
     ]
 
+    # for sanskrit
+    skt_eng_dict_list = [
+        "wil",
+        "yat",
+        "gst",
+        "ben",
+        "mw72",
+        "lan",
+        "lrv",
+        "ap90",
+        "cae",
+        "md",
+        "mw",
+        "shs",
+        # 'ap',
+        # 'pd'
+    ]
+
+    eng_skt_dict_list = ["mwe", "bor", "ae"]
+    skt_fre_dict_list = ["bur", "stc"]
+    skt_ger_dict_list = ["pwg", "gra", "pw", "ccs", "sch"]
+    skt_lat_dict_list = ["bop"]
+    skt_skt_dict_list = ["armh", "vcp", "skd"]
+    grk_eng_dict_list = ["lsj"]
+    lat_eng_dict_list = ["ls"]
+
+    dictionary_dict = {
+        "Sanskrit-English": skt_eng_dict_list,
+        "English-Sanskrit": eng_skt_dict_list,
+        "Sanskrit-French": skt_fre_dict_list,
+        "Sanskrit-German": skt_ger_dict_list,
+        "Sanskrit-Latin": skt_lat_dict_list,
+        "Sanskrit-Sanskrit": skt_skt_dict_list,
+        "Greek-English": grk_eng_dict_list,
+        "Latin-English": lat_eng_dict_list
+    }
+
     dataset_data = []
     for json_file in json_files:
+        for key, value in dictionary_dict.items():
+            if json_file.split(".")[0] in value:
+                dict_type = key
+
+        context_format = (
+            f"The {dict_type} dictionary contains the following description:"
+        )
+
         with open(os.path.join(data_dir, json_file), "r", encoding="utf-8") as f:
             data_list = json.load(f)
 
             for data in data_list:
                 dataset_data.append(
                     {
-                        "instruction": f"What is the meaning of {data['sanskrit']}",
-                        "input": "",
-                        "output": data["english"],
+                        "instruction": f"What is the meaning of Sanskrit word '{data['headword']}'?",
+                        "input": f"{context_format} {data['description']}",
+                        "output": data["description"],
                     }
                 )
 
@@ -47,8 +91,7 @@ def create_dataset():
 
 
 def create_instruction_dataset():
-    '''create dataset for instruction
-    '''
+    """create dataset for instruction"""
 
     # load dataset
     dataset = load_dataset(
@@ -59,11 +102,28 @@ def create_instruction_dataset():
     # プロンプトテンプレートの準備
     def generate_prompt(data_point):
         if data_point["input"]:
-            result = f"""[INST] {data_point["instruction"]}\n\n{data_point["input"]} [/INST] {data_point["output"]}"""
+            result = f"""Below is an instruction that describes a task. Write a response that appropriately completes the request.
+
+### Instruction:
+{data_point["instruction"]}
+
+### Input:
+{data_point["input"]}
+
+### Response:
+{data_point["output"]}
+<|endoftext|>
+"""
         else:
-            result = (
-                f"""[INST] {data_point["instruction"]} [/INST] {data_point["output"]}"""
-            )
+            result = f"""Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
+
+### Instruction:
+{data_point["instruction"]}
+
+### Response:
+{data_point["output"]}
+<|endoftext|>
+"""
         return result
 
     # テキスト列の追加
@@ -78,25 +138,22 @@ def create_instruction_dataset():
 
 
 def train(dataset, bnb_config, model_name):
-    '''finetuning by Sanskrit-English dictionaries
-    '''
+    """finetuning by Sanskrit-English dictionaries"""
 
     model = AutoModelForCausalLM.from_pretrained(
         model_name,  # モデル名
         quantization_config=bnb_config,  # 量子化パラメータ
-        device_map="auto",
-        use_auth_token=True,
+        device_map="auto"
     )
     model.config.use_cache = False  # キャッシュ (学習時はFalse)
-    model.config.pretraining_tp = 1  # 事前学習で使用したテンソル並列ランク(7B:1、13B:2)
+    model.config.pretraining_tp = 2  # 事前学習で使用したテンソル並列ランク(7B:1、13B:2)
 
     # トークナイザーの準備
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,  # モデル名
         use_fast=False,  # Fastトークナイザーの有効化
         add_eos_token=True,  # データへのEOSの追加を指示
-        trust_remote_code=True,
-        use_auth_token=True,
+        trust_remote_code=True
     )
     tokenizer.pad_token = tokenizer.unk_token
     tokenizer.padding_side = "right"  # fp16でのオーバーフロー問題対策
@@ -157,13 +214,11 @@ def train(dataset, bnb_config, model_name):
     trainer.model.save_pretrained("./results")
 
 
-
-
 def main():
     create_dataset()
 
     dataset = create_instruction_dataset()
-        
+
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,  # 4bitベースモデルの有効化
         bnb_4bit_quant_type="nf4",  # 量子化種別 (fp4 or nf4)
@@ -174,7 +229,6 @@ def main():
     model_name = "meta-llama/Llama-2-13b-chat-hf"
 
     train(dataset, bnb_config, model_name)
-
 
 
 if __name__ == "__main__":
