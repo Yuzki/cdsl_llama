@@ -1,18 +1,13 @@
 # パッケージのインポート
-import os
 import json
+import os
+
 import torch
 from datasets import load_dataset
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    BitsAndBytesConfig,
-    HfArgumentParser,
-    TrainingArguments,
-    pipeline,
-    logging,
-)
-from peft import LoraConfig, PeftModel, PeftConfig
+from peft import LoraConfig, PeftConfig, PeftModel
+from transformers import (AutoModelForCausalLM, AutoTokenizer,
+                          BitsAndBytesConfig, HfArgumentParser,
+                          TrainingArguments, logging, pipeline)
 from trl import SFTTrainer
 
 data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -61,7 +56,7 @@ def create_dataset():
         "Sanskrit-Latin": skt_lat_dict_list,
         "Sanskrit-Sanskrit": skt_skt_dict_list,
         "Greek-English": grk_eng_dict_list,
-        "Latin-English": lat_eng_dict_list
+        "Latin-English": lat_eng_dict_list,
     }
 
     dataset_data = []
@@ -143,7 +138,7 @@ def train(dataset, bnb_config, model_name):
     model = AutoModelForCausalLM.from_pretrained(
         model_name,  # モデル名
         quantization_config=bnb_config,  # 量子化パラメータ
-        device_map="auto"
+        device_map="auto",
     )
     model.config.use_cache = False  # キャッシュ (学習時はFalse)
     model.config.pretraining_tp = 2  # 事前学習で使用したテンソル並列ランク(7B:1、13B:2)
@@ -153,7 +148,7 @@ def train(dataset, bnb_config, model_name):
         model_name,  # モデル名
         use_fast=False,  # Fastトークナイザーの有効化
         add_eos_token=True,  # データへのEOSの追加を指示
-        trust_remote_code=True
+        trust_remote_code=True,
     )
     tokenizer.pad_token = tokenizer.unk_token
     tokenizer.padding_side = "right"  # fp16でのオーバーフロー問題対策

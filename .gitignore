@@ -1,7 +1,8 @@
 .venv
 data
 data.bak
-llama-2*
+model
 results
 wandb
 app.py
+.vscode

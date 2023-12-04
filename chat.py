@@ -1,7 +1,11 @@
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from peft import PeftModel
 import argparse
+import glob
+import os
+
+import torch
+from peft import PeftModel
+from transformers import (AutoModelForCausalLM, AutoTokenizer,
+                          BitsAndBytesConfig)
 
 
 def chat():
@@ -22,10 +26,23 @@ def chat():
         torch_dtype=torch.bfloat16,
     )
 
-    model_dict = {1: "./llama-2-13b-skt-eng", 2: "./llama-2-13b-skt-eng-context", 3: "./llama-2-13b-skt-ger-context", 4: "./llama-2-13b-skt-all-context"}
-    model_num = input(
-        "モデル選択\n[1] Skt-Eng (no context) [2] Skt-Eng (+context) [3] Skt-Eng&Ger (+context) [4] Skt-Eng&Ger&Fre&Lat&Skt (+context) (default is the most recently created model)\n"
-    )
+    model_dict = {
+        n + 1: model
+        for n, model in enumerate(
+            glob.glob(
+                os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)), "model", "llama-2-*"
+                )
+            )
+        )
+    }
+    # model_dict = {1: "./llama-2-13b-skt-eng", 2: "./llama-2-13b-skt-eng-context", 3: "./llama-2-13b-skt-ger-context", 4: "./llama-2-13b-skt-all-context", 5: "./llama-2-13b-skt-grk-lat-context"}
+    print("モデル選択")
+    for key, value in model_dict.items():
+        print(f"[{key}] {os.path.basename(value)}")
+
+    model_num = input("Input number: ")
+
     if model_num:
         print(f"Loading {model_dict[int(model_num)]} model.")
         peftmodel_name = model_dict[int(model_num)]
@@ -63,7 +80,8 @@ def chat():
                 )
                 output = tokenizer.decode(
                     # outputs.sequences[0, inputs.input_ids.shape[1] :]
-                    outputs[0], skip_special_tokens=True
+                    outputs[0],
+                    skip_special_tokens=True,
                 )
                 print(f"Answer ({i}): ", output)
 
@@ -125,10 +143,11 @@ def chat_base_model():
 
 
 if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(description='Chat with llama.')
-    parser.add_argument('-l', '--llama', action='store_true', help='Use base model')
-    parser.add_argument('-r', '--response', type=int, default=1,  help='Number of responses (default 1)')
+    parser = argparse.ArgumentParser(description="Chat with llama.")
+    parser.add_argument("-l", "--llama", action="store_true", help="Use base model")
+    parser.add_argument(
+        "-r", "--response", type=int, default=1, help="Number of responses (default 1)"
+    )
     args = parser.parse_args()
     if args.llama:
         chat_base_model()
