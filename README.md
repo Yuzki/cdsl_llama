@@ -1,6 +1,6 @@
-# cdsl_llama
+# cdsl-llama
 
-`cdsl_llama` is a repository for experiments, tooling, and research workflows related to LLaMA-based large language models.
+`cdsl-llama` is a repository for experiments, tooling, and research workflows related to LLaMA-based large language models.
 
 ## Overview
 
