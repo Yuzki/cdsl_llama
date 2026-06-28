@@ -6,3 +6,11 @@ results
 wandb
 app.py
 .vscode
+
+# coding agent
+.agents/
+.codex/
+.claude/
+AGENTS.md
+CLAUDE.md
+
