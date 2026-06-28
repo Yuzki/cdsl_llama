@@ -1,85 +1,73 @@
 import argparse
 import glob
-import os
+from pathlib import Path
 
 import torch
 from peft import PeftModel
-from transformers import (AutoModelForCausalLM, AutoTokenizer,
-                          BitsAndBytesConfig)
+from transformers import AutoModelForCausalLM
+
+from model_utils import (
+    BASE_MODEL_NAME,
+    PROJECT_DIR,
+    create_bnb_config,
+    create_tokenizer,
+)
 
 
-def chat():
-    model_name = "meta-llama/Llama-2-13b-chat-hf"
+DEFAULT_ADAPTER_DIR = PROJECT_DIR / "results"
+MODEL_DIR = PROJECT_DIR / "model"
 
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,  # 4bitベースモデルの有効化
-        bnb_4bit_quant_type="nf4",  # 量子化種別 (fp4 or nf4)
-        bnb_4bit_compute_dtype=torch.float16,  # 4bitベースモデルのdtype (float16 or bfloat16)
-        bnb_4bit_use_double_quant=False,  # 4bitベースモデルのネストされた量子化の有効化 (二重量子化)
-    )
 
-    # モデルの準備
-    base_model = AutoModelForCausalLM.from_pretrained(
+def load_base_model(model_name: str = BASE_MODEL_NAME):
+    model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        quantization_config=bnb_config,
+        quantization_config=create_bnb_config(),
         device_map="auto",
         torch_dtype=torch.bfloat16,
     )
+    model.config.pretraining_tp = 2
+    return model
 
-    model_dict = {
-        n + 1: model
-        for n, model in enumerate(
-            glob.glob(
-                os.path.join(
-                    os.path.dirname(os.path.abspath(__file__)), "model", "llama-2-*"
-                )
-            )
-        )
+
+def discover_adapter_models(model_dir: Path = MODEL_DIR) -> dict[int, Path]:
+    return {
+        n + 1: Path(model)
+        for n, model in enumerate(glob.glob(str(model_dir / "llama-2-*")))
     }
-    # model_dict = {1: "./llama-2-13b-skt-eng", 2: "./llama-2-13b-skt-eng-context", 3: "./llama-2-13b-skt-ger-context", 4: "./llama-2-13b-skt-all-context", 5: "./llama-2-13b-skt-grk-lat-context"}
+
+
+def select_adapter_path(model_dict: dict[int, Path]) -> Path:
     print("モデル選択")
     for key, value in model_dict.items():
-        print(f"[{key}] {os.path.basename(value)}")
+        print(f"[{key}] {value.name}")
 
     model_num = input("Input number: ")
 
-    if model_num:
-        print(f"Loading {model_dict[int(model_num)]} model.")
-        peftmodel_name = model_dict[int(model_num)]
-    else:
-        print(f"Loading recently created model.")
-        peftmodel_name = "./results"
-    model = PeftModel.from_pretrained(base_model, peftmodel_name)
+    if not model_num:
+        print("Loading recently created model.")
+        return DEFAULT_ADAPTER_DIR
 
-    # トークナイザーの準備
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name, use_fast=False, add_eos_token=True, trust_remote_code=True
-    )
-    tokenizer.pad_token = tokenizer.unk_token
-    tokenizer.padding_side = "right"
+    selected_model = model_dict[int(model_num)]
+    print(f"Loading {selected_model} model.")
+    return selected_model
 
-    # 推論の実行
+
+def run_adapter_chat(model, tokenizer, response_count: int) -> None:
     try:
         while True:
-            # word = input("Input a Sanskrit word: ")
-            # prompt = f"[INST]What is the meaning of {word}?[/INST]"
-
             base_prompt = input("Prompt: ")
             prompt = f"### Instruction:\n{base_prompt}\n\n### Response:\n"
 
-            for i in range(args.response):
+            for i in range(response_count):
                 inputs = tokenizer(
                     prompt, add_special_tokens=False, return_tensors="pt"
                 )
                 outputs = model.generate(
                     **inputs.to(model.device),
                     max_new_tokens=256,
-                    # do_sample=True,
                     temperature=0.7,
-                    # return_dict_in_generate=True,
                 )
                 output = tokenizer.decode(
-                    # outputs.sequences[0, inputs.input_ids.shape[1] :]
                     outputs[0],
                     skip_special_tokens=True,
                 )
@@ -89,41 +77,28 @@ def chat():
         print("Quit.")
 
 
-def chat_base_model():
-    model_name = "meta-llama/Llama-2-13b-chat-hf"
+def chat(response_count: int) -> None:
+    base_model = load_base_model()
+    adapter_path = select_adapter_path(discover_adapter_models())
+    model = PeftModel.from_pretrained(base_model, str(adapter_path))
+    tokenizer = create_tokenizer()
+    run_adapter_chat(model, tokenizer, response_count)
 
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,  # 4bitベースモデルの有効化
-        bnb_4bit_quant_type="nf4",  # 量子化種別 (fp4 or nf4)
-        bnb_4bit_compute_dtype=torch.float16,  # 4bitベースモデルのdtype (float16 or bfloat16)
-        bnb_4bit_use_double_quant=False,  # 4bitベースモデルのネストされた量子化の有効化 (二重量子化)
-    )
+
+def chat_base_model() -> None:
     model = AutoModelForCausalLM.from_pretrained(
-        model_name,  # モデル名
-        quantization_config=bnb_config,  # 量子化パラメータ
+        BASE_MODEL_NAME,
+        quantization_config=create_bnb_config(),
         device_map="auto",
         use_auth_token=True,
     )
-    model.config.use_cache = True  # キャッシュ (学習時はFalse)
-    model.config.pretraining_tp = 2  # 事前学習で使用したテンソル並列ランク(7B:1、13B:2)
+    model.config.use_cache = True
+    model.config.pretraining_tp = 2
 
-    # トークナイザーの準備
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name,  # モデル名
-        use_fast=False,  # Fastトークナイザーの有効化
-        add_eos_token=True,  # データへのEOSの追加を指示
-        trust_remote_code=True,
-        use_auth_token=True,
-    )
-    tokenizer.pad_token = tokenizer.unk_token
-    tokenizer.padding_side = "right"  # fp16でのオーバーフロー問題対策
+    tokenizer = create_tokenizer(use_auth_token=True)
 
-    # 推論の実行
     try:
         while True:
-            # word = input("Input a Sanskrit word: ")
-            # prompt = f"[INST]What is the meaning of {word}?[/INST]"
-
             base_prompt = input("Prompt: ")
             prompt = f"#Instruction:\n{base_prompt}\n\n# Response:\n"
 
@@ -142,14 +117,22 @@ def chat_base_model():
         print("\nQuit.")
 
 
-if __name__ == "__main__":
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Chat with llama.")
     parser.add_argument("-l", "--llama", action="store_true", help="Use base model")
     parser.add_argument(
         "-r", "--response", type=int, default=1, help="Number of responses (default 1)"
     )
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
     if args.llama:
         chat_base_model()
     else:
-        chat()
+        chat(args.response)
+
+
+if __name__ == "__main__":
+    main()
